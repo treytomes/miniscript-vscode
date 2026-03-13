@@ -99,9 +99,19 @@ class Program
 				output.Error(text);
 
 				List<SourceLoc> stack = interpreter.vm.GetStack();
-				foreach (var loc in stack)
+				if (stack.Count > 0)
 				{
-					output.Diagnostic(loc?.context ?? props.ScriptPath, loc?.lineNum ?? 0, 0, "error", text);
+					output.Stdout("\n");
+					output.Stdout("Call stack:\n");
+					for (var n = 0; n < stack.Count; n++)
+					{
+						var loc = stack[n];
+						var context = loc?.context ?? props.ScriptPath;
+						var lineNum = loc?.lineNum ?? 0;
+
+						output.Stdout($"{n}. {context} line {lineNum}\n");
+						output.Diagnostic(loc?.context ?? props.ScriptPath, loc?.lineNum ?? 0, 0, "error", text);
+					}
 				}
 			};
 
@@ -116,17 +126,16 @@ class Program
 			{
 				while (interpreter.Running())
 				{
-					cancellationToken.ThrowIfCancellationRequested();
 					interpreter.RunUntilDone(0.03f);
+					cancellationToken.ThrowIfCancellationRequested();
 				}
 			}
 			catch (OperationCanceledException)
 			{
-				interpreter.Stop();
 				interpreter.errorOutput?.Invoke("Operation cancelled.", true);
+				interpreter.Stop();
 				output.Emit(new { type = "cancelled" });
 			}
-			// interpreter.RunUntilDone();
 
 			output.Exit(0);
 			return 0;
