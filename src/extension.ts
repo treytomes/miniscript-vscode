@@ -1,26 +1,95 @@
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
-import * as vscode from 'vscode';
+// extension.ts
+// Entry point for the MiniScript Runner VS Code extension
 
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
+import * as vscode from 'vscode';
+import * as cp from 'child_process';
+import * as path from 'path';
+
+/**
+ * Called when the extension is activated.
+ * Registers the MiniScript: Run File command.
+ */
 export function activate(context: vscode.ExtensionContext) {
 
-	// Use the console to output diagnostic information (console.log) and errors (console.error)
-	// This line of code will only be executed once when your extension is activated
-	console.log('Congratulations, your extension "miniscript-runner" is now active!');
+    const runnerPath = path.join(
+        context.extensionPath,
+        'dist',
+        process.platform === 'win32'
+            ? 'miniscript-cli.exe'
+            : 'miniscript-cli'
+    );
 
-	// The command has been defined in the package.json file
-	// Now provide the implementation of the command with registerCommand
-	// The commandId parameter must match the command field in package.json
-	const disposable = vscode.commands.registerCommand('miniscript-runner.helloWorld', () => {
-		// The code you place here will be executed every time your command is executed
-		// Display a message box to the user
-		vscode.window.showInformationMessage('Hello World from miniscript-runner!');
-	});
+    console.log('MiniScript runner path:', runnerPath);
 
-	context.subscriptions.push(disposable);
+    // Output channel for MiniScript execution results
+    const outputChannel = vscode.window.createOutputChannel('MiniScript');
+
+    /**
+     * Run the currently active MiniScript file.
+     */
+    const runFileCommand = vscode.commands.registerCommand(
+        'miniscript.runFile',
+        async () => {
+
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) {
+                vscode.window.showErrorMessage('No active editor.');
+                return;
+            }
+
+            const document = editor.document;
+
+            // Optional: enforce .ms extension
+            if (path.extname(document.fileName) !== '.ms') {
+                vscode.window.showErrorMessage('Active file is not a MiniScript (.ms) file.');
+                return;
+            }
+
+            // Ensure file is saved before execution
+            if (document.isDirty) {
+                await document.save();
+            }
+
+            outputChannel.clear();
+            outputChannel.show(true);
+            outputChannel.appendLine(`Running MiniScript: ${document.fileName}`);
+            outputChannel.appendLine('----------------------------------------');
+
+            // Spawn the MiniScript runner process
+            const child = cp.spawn(
+                runnerPath,               // executable name
+                [document.fileName],               // arguments
+                { cwd: path.dirname(document.fileName) }
+            );
+
+            // Capture stdout
+            child.stdout.on('data', (data) => {
+                outputChannel.append(data.toString());
+            });
+
+            // Capture stderr
+            child.stderr.on('data', (data) => {
+                outputChannel.append(data.toString());
+            });
+
+            // Process exit handling
+            child.on('close', (code) => {
+                outputChannel.appendLine('');
+                outputChannel.appendLine(`Process exited with code ${code}`);
+            });
+
+            child.on('error', (err) => {
+                vscode.window.showErrorMessage(
+                    `Failed to start MiniScript runner: ${err.message}`
+                );
+            });
+        }
+    );
+
+    context.subscriptions.push(runFileCommand, outputChannel);
 }
 
-// This method is called when your extension is deactivated
+/**
+ * Called when the extension is deactivated.
+ */
 export function deactivate() {}
