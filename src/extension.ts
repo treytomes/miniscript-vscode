@@ -6,36 +6,90 @@ import * as cp from 'child_process';
 import * as path from 'path';
 
 type MiniScriptMessage =
-    | { type: 'stdout'; text: string }
-    | { type: 'implicit'; text: string }
-    | { type: 'error'; text: string }
-    | { type: 'exit'; code: number };
+	| { type: 'stdout'; text: string }
+	| { type: 'implicit'; text: string }
+	| { type: 'error'; text: string }
+	| {
+		type: 'diagnostic';
+		file: string;
+		line: number;
+		column: number;
+		severity: 'error' | 'warning' | 'info';
+		message: string;
+    }
+	| { type: 'diagnostics.clear' }
+	| { type: 'exit'; code: number };
 
-function handleMiniScriptMessage(outputChannel: vscode.OutputChannel, msg: MiniScriptMessage) {
+interface MiniScriptRuntimeContext {
+    output: vscode.OutputChannel;
+    diagnostics: vscode.DiagnosticCollection;
+}
+
+function addDiagnostic(
+    collection: vscode.DiagnosticCollection,
+    msg: Extract<MiniScriptMessage, { type: 'diagnostic' }>
+) {
+    const uri = vscode.Uri.file(msg.file);
+
+    const range = new vscode.Range(
+        Math.max(0, msg.line - 1),
+        Math.max(0, msg.column),
+        Math.max(0, msg.line - 1),
+        Math.max(0, msg.column + 1)
+    );
+
+    const severity =
+        msg.severity === 'error'
+            ? vscode.DiagnosticSeverity.Error
+            : msg.severity === 'warning'
+            ? vscode.DiagnosticSeverity.Warning
+            : vscode.DiagnosticSeverity.Information;
+
+    const diagnostic = new vscode.Diagnostic(
+        range,
+        msg.message,
+        severity
+    );
+
+    const existing = collection.get(uri) ?? [];
+    collection.set(uri, [...existing, diagnostic]);
+}
+
+function handleMiniScriptMessage(
+    ctx: MiniScriptRuntimeContext,
+    msg: MiniScriptMessage
+) {
     switch (msg.type) {
         case 'stdout':
-            outputChannel.appendLine(msg.text);
+            ctx.output.append(msg.text);
             break;
 
         case 'implicit':
-            // TODO: Implicit output should be in a different color.  Possibly configurable?
-            outputChannel.appendLine(msg.text);
+            ctx.output.appendLine(`» ${msg.text}`);
             break;
 
         case 'error':
-            // TODO: Error should be in a different color.
-            outputChannel.appendLine(`[error] ${msg.text}`);
+            ctx.output.append(`✖ ${msg.text}`);
             break;
 
         case 'exit':
-            outputChannel.appendLine('');
-            outputChannel.appendLine(`Process exited with code ${msg.code}`);
+            ctx.output.append('');
+            ctx.output.append(`Process exited with code ${msg.code}`);
             break;
 
-        default:
-            outputChannel.appendLine(
-                `[unknown message] ${JSON.stringify(msg)}`
-            );
+		case 'diagnostics.clear':
+			ctx.output.clear();
+			break;
+
+		case 'diagnostic':
+			addDiagnostic(ctx.diagnostics, msg);
+			break;
+			
+		default:
+			ctx.output.appendLine(
+				`[unknown message] ${JSON.stringify(msg)}`
+			);
+			break;
     }
 }
 
@@ -64,9 +118,17 @@ export function activate(context: vscode.ExtensionContext) {
 
     console.log('MiniScript runner path:', runnerPath);
 
-    // Output channel for MiniScript execution results
-    const outputChannel = vscode.window.createOutputChannel('MiniScript');
+	const diagnostics = vscode.languages.createDiagnosticCollection('miniscript');
+	context.subscriptions.push(diagnostics);
 
+    // Output channel for MiniScript execution results
+	const outputChannel = vscode.window.createOutputChannel('MiniScript');
+
+	const runtimeContext: MiniScriptRuntimeContext = {
+		output: outputChannel,
+		diagnostics
+	};
+	
     /**
      * Run the currently active MiniScript file.
      */
@@ -122,7 +184,7 @@ export function activate(context: vscode.ExtensionContext) {
 
                     try {
                         const message = JSON.parse(line) as MiniScriptMessage;
-                        handleMiniScriptMessage(outputChannel, message);
+                        handleMiniScriptMessage(runtimeContext, message);
                     } catch (err) {
                         outputChannel.appendLine(
                             `[protocol error] ${line}`
