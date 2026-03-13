@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import ExecutionState from './ExecutionState';
+import setRunningState from './setRunningState';
 
 type MiniScriptMessage =
     | { type: 'stdout'; text: string }
@@ -27,12 +28,15 @@ export class MiniScriptProtocol {
     ) {}
 
     startExecution() {
-        this.state = ExecutionState.Running;
-        this.diagnostics.clear();
+		this.state = ExecutionState.Running;
+		this.diagnostics.clear();
+		setRunningState(true);
     }
 
     finishExecution(code?: number) {
         this.state = ExecutionState.Finished;
+    	setRunningState(false);
+
         if (code !== undefined) {
             this.output.appendLine('');
             this.output.appendLine(`Process exited with code ${code}`);
@@ -90,6 +94,7 @@ export class MiniScriptProtocol {
 
 			case 'cancelled':
             	this.state = ExecutionState.Finished;
+    			setRunningState(false);
             	this.output.appendLine('');
             	this.output.appendLine('⏹ MiniScript execution cancelled.');
 				break;

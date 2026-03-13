@@ -30,6 +30,18 @@
           "description": "Path to MiniScript CLI executable."
         }
       }
+    },
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "miniscript.runFile",
+          "when": "!miniscript.isRunning"
+        },
+        {
+          "command": "miniscript.cancelRun",
+          "when": "miniscript.isRunning"
+        }
+      ]
     }
   },
   "scripts": {
