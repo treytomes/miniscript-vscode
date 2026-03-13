@@ -1,8 +1,8 @@
 main = function
 	print "Hello world!"
-	1
-	2
-	3
+	for n in range(10000)
+		print n
+	end for
 	print stackTrace
 	asdf
 end function

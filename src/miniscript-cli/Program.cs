@@ -1,28 +1,82 @@
-﻿using Miniscript;
-using MiniScriptCli;
+﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Miniscript;
+using System.CommandLine;
+
+namespace MiniScriptCli;
 
 class Program
 {
-	static int Main(string[] args)
+	static async Task<int> Main(string[] args)
 	{
+		var scriptPathOption = new Option<string>(
+			name: "--scriptPath",
+			description: "Path to the script source."
+		);
+
+		var configFileOption = new Option<string>(
+			name: "--config",
+			description: "Path to the configuration file",
+			getDefaultValue: () => "appsettings.json");
+
+		var debugOption = new Option<bool>(
+			name: "--debug",
+			description: "Enable debug mode");
+
+		var root = new RootCommand("MiniScript VS.Code CLI");
+		root.AddOption(scriptPathOption);
+		root.AddOption(configFileOption);
+		root.AddOption(debugOption);
+
+		root.SetHandler(async (scriptPath, configFile, debug) =>
+		{
+			var props = new CommandLineProps
+			{
+				ScriptPath = scriptPath,
+				ConfigFile = configFile,
+				Debug = debug,
+			};
+
+			using var host = CreateHostBuilder(props).Build();
+			var logger = host.Services.GetRequiredService<ILogger<Program>>();
+			var cts = new CancellationTokenSource();
+			var ct = cts.Token;
+
+			Console.CancelKeyPress += (sender, e) =>
+			{
+				e.Cancel = true;        // prevent hard process kill
+				cts.Cancel();           // signal kernel shutdown
+			};
+
+			await StartAsync(props, cts.Token);
+		}, scriptPathOption, configFileOption, debugOption);
+
+		return await root.InvokeAsync(args);
+	}
+
+	private static async Task<int> StartAsync(CommandLineProps props, CancellationToken cancellationToken)
+	{
+		await Task.Yield();
 		var output = new JsonOutputHub();
 
 		try
 		{
-			if (args.Length == 0)
+			if (string.IsNullOrWhiteSpace(props.ScriptPath))
 			{
 				Console.Error.WriteLine("No script file provided.");
 				return 1;
 			}
 
-			var scriptPath = args[0];
-			if (!File.Exists(scriptPath))
+			if (!File.Exists(props.ScriptPath))
 			{
-				Console.Error.WriteLine($"File not found: {scriptPath}");
+				Console.Error.WriteLine($"File not found: {props.ScriptPath}");
 				return 1;
 			}
 
-			var source = File.ReadAllText(scriptPath);
+			var source = File.ReadAllText(props.ScriptPath);
 
 			var interpreter = new Interpreter();
 
@@ -47,7 +101,7 @@ class Program
 				List<SourceLoc> stack = interpreter.vm.GetStack();
 				foreach (var loc in stack)
 				{
-					output.Diagnostic(loc.context ?? scriptPath, loc.lineNum, 0, "error", text);
+					output.Diagnostic(loc.context ?? props.ScriptPath, loc.lineNum, 0, "error", text);
 				}
 			};
 
@@ -68,5 +122,49 @@ class Program
 			Console.Error.WriteLine(ex.ToString());
 			return 2;
 		}
+	}
+
+	private static IHostBuilder CreateHostBuilder(CommandLineProps props)
+	{
+		return Host.CreateDefaultBuilder()
+			.ConfigureAppConfiguration((ctx, config) => ConfigureAppConfiguration(config, props))
+			.ConfigureLogging(ConfigureLogging)
+			.ConfigureServices((ctx, services) => ConfigureServices(ctx, services));
+	}
+
+	private static void ConfigureAppConfiguration(IConfigurationBuilder config, CommandLineProps props)
+	{
+		config.Sources.Clear();
+		config.SetBasePath(AppContext.BaseDirectory);
+
+		config.AddJsonFile(
+			props.ConfigFile,
+			optional: false,
+			reloadOnChange: false);
+
+		var overrides = new Dictionary<string, string?>
+		{
+			["Debug"] = props.Debug.ToString()
+		};
+
+		config.AddInMemoryCollection(overrides);
+	}
+
+	private static void ConfigureLogging(HostBuilderContext ctx, ILoggingBuilder logging)
+	{
+		logging.ClearProviders();
+
+		logging.AddConsole();
+
+		var debug = ctx.Configuration.GetValue<bool>("Debug");
+		var minLevel = debug ? LogLevel.Trace : LogLevel.Information;
+		logging.SetMinimumLevel(minLevel);
+	}
+
+	private static void ConfigureServices(HostBuilderContext ctx, IServiceCollection services)
+	{
+		// Configuration
+		services.Configure<AppSettings>(ctx.Configuration);
+		services.AddSingleton(sp => sp.GetRequiredService<IOptions<AppSettings>>().Value);
 	}
 }

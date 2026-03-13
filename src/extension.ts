@@ -4,6 +4,8 @@
 import * as vscode from 'vscode';
 import * as cp from 'child_process';
 import * as path from 'path';
+import { MiniScriptProtocol } from './miniscript-cli/MiniScriptProtocol';
+import ExecutionState from './miniscript-cli/ExecutionState';
 
 type MiniScriptMessage =
 	| { type: 'stdout'; text: string }
@@ -93,29 +95,33 @@ function handleMiniScriptMessage(
     }
 }
 
-/**
- * Called when the extension is activated.
- * Registers the MiniScript: Run File command.
- */
-export function activate(context: vscode.ExtensionContext) {
-    // const runnerPath =
-    //     vscode.workspace.getConfiguration('miniscript').get<string>('runnerPath') ?? 
-    //     path.join(
-    //         context.extensionPath,
-    //         'dist',
-    //         process.platform === 'win32'
-    //             ? 'miniscript-cli.exe'
-    //             : 'miniscript-cli'
-    //     );
-    const runnerPath =
-        path.join(
+function getRunnerPath(context: vscode.ExtensionContext) {
+	const configSection = vscode.workspace.getConfiguration('miniscript');
+	var runnerPath = undefined;
+	if (configSection) {
+		runnerPath = vscode.workspace.getConfiguration('miniscript').get<string>('runnerPath');
+	}
+	if (!runnerPath) {
+		runnerPath = path.join(
             context.extensionPath,
             'dist',
             process.platform === 'win32'
                 ? 'miniscript-cli.exe'
                 : 'miniscript-cli'
         );
+	}
+	if (!runnerPath) {
+		throw new Error("Unable to find a MiniScript CLI.");
+	}
+	return runnerPath;
+}
 
+/**
+ * Called when the extension is activated.
+ * Registers the MiniScript: Run File command.
+ */
+export function activate(context: vscode.ExtensionContext) {
+	const runnerPath = getRunnerPath(context);
     console.log('MiniScript runner path:', runnerPath);
 
 	const diagnostics = vscode.languages.createDiagnosticCollection('miniscript');
@@ -124,10 +130,12 @@ export function activate(context: vscode.ExtensionContext) {
     // Output channel for MiniScript execution results
 	const outputChannel = vscode.window.createOutputChannel('MiniScript');
 
-	const runtimeContext: MiniScriptRuntimeContext = {
-		output: outputChannel,
-		diagnostics
-	};
+	const protocol = new MiniScriptProtocol(outputChannel, diagnostics);
+
+	// const runtimeContext: MiniScriptRuntimeContext = {
+	// 	output: outputChannel,
+	// 	diagnostics
+	// };
 	
     /**
      * Run the currently active MiniScript file.
@@ -136,6 +144,11 @@ export function activate(context: vscode.ExtensionContext) {
         'miniscript.runFile',
         async () => {
 
+			if (protocol.executionState === ExecutionState.Running) {
+                vscode.window.showWarningMessage('MiniScript is already running.');
+                return;
+			}
+			
             const editor = vscode.window.activeTextEditor;
             if (!editor) {
                 vscode.window.showErrorMessage('No active editor.');
@@ -160,53 +173,34 @@ export function activate(context: vscode.ExtensionContext) {
             outputChannel.appendLine(`Running MiniScript: ${document.fileName}`);
             outputChannel.appendLine('----------------------------------------');
 
+			protocol.startExecution();
+			
             // Spawn the MiniScript runner process
             const child = cp.spawn(
-                runnerPath,             // executable name
-                [document.fileName],    // arguments
+                runnerPath,								// executable name
+                ['--scriptPath', document.fileName],    // arguments
                 { cwd: path.dirname(document.fileName) }
             );
 
             // Capture stdout
             let stdoutBuffer = '';
 
-            child.stdout.on('data', (data) => {
-                stdoutBuffer += data.toString();
-
-                let newlineIndex;
-                while ((newlineIndex = stdoutBuffer.indexOf('\n')) >= 0) {
-                    const line = stdoutBuffer.slice(0, newlineIndex).trim();
-                    stdoutBuffer = stdoutBuffer.slice(newlineIndex + 1);
-
-                    if (!line) {
-                        continue;
-                    }
-
-                    try {
-                        const message = JSON.parse(line) as MiniScriptMessage;
-                        handleMiniScriptMessage(runtimeContext, message);
-                    } catch (err) {
-                        outputChannel.appendLine(
-                            `[protocol error] ${line}`
-                        );
-                    }
-                }
-            });
+            child.stdout.on('data', (data) =>
+                protocol.handleStdoutChunk(data)
+            );
 
             // Capture stderr
-            child.stderr.on('data', (data) => {
-                outputChannel.appendLine(
-                    `[runner stderr] ${data.toString()}`
-                );
-            });
+            child.stderr.on('data', (data) =>
+                protocol.handleStderrChunk(data)
+            );
 
             // Process exit handling
-            child.on('close', (code) => {
-                outputChannel.appendLine('');
-                outputChannel.appendLine(`Process exited with code ${code}`);
-            });
+           child.on('close', (code) =>
+                protocol.finishExecution(code ?? undefined)
+            );
 
             child.on('error', (err) => {
+                protocol.finishExecution();
                 vscode.window.showErrorMessage(
                     `Failed to start MiniScript runner: ${err.message}`
                 );

@@ -26,7 +26,7 @@ sealed class JsonOutputHub
 			line,
 			column,
 			severity,
-			message
+			message = message.Trim()
 		});
 	}
 
