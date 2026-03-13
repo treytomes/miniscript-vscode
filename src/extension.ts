@@ -5,19 +5,62 @@ import * as vscode from 'vscode';
 import * as cp from 'child_process';
 import * as path from 'path';
 
+type MiniScriptMessage =
+    | { type: 'stdout'; text: string }
+    | { type: 'implicit'; text: string }
+    | { type: 'error'; text: string }
+    | { type: 'exit'; code: number };
+
+function handleMiniScriptMessage(outputChannel: vscode.OutputChannel, msg: MiniScriptMessage) {
+    switch (msg.type) {
+        case 'stdout':
+            outputChannel.appendLine(msg.text);
+            break;
+
+        case 'implicit':
+            // TODO: Implicit output should be in a different color.  Possibly configurable?
+            outputChannel.appendLine(msg.text);
+            break;
+
+        case 'error':
+            // TODO: Error should be in a different color.
+            outputChannel.appendLine(`[error] ${msg.text}`);
+            break;
+
+        case 'exit':
+            outputChannel.appendLine('');
+            outputChannel.appendLine(`Process exited with code ${msg.code}`);
+            break;
+
+        default:
+            outputChannel.appendLine(
+                `[unknown message] ${JSON.stringify(msg)}`
+            );
+    }
+}
+
 /**
  * Called when the extension is activated.
  * Registers the MiniScript: Run File command.
  */
 export function activate(context: vscode.ExtensionContext) {
-
-    const runnerPath = path.join(
-        context.extensionPath,
-        'dist',
-        process.platform === 'win32'
-            ? 'miniscript-cli.exe'
-            : 'miniscript-cli'
-    );
+    // const runnerPath =
+    //     vscode.workspace.getConfiguration('miniscript').get<string>('runnerPath') ?? 
+    //     path.join(
+    //         context.extensionPath,
+    //         'dist',
+    //         process.platform === 'win32'
+    //             ? 'miniscript-cli.exe'
+    //             : 'miniscript-cli'
+    //     );
+    const runnerPath =
+        path.join(
+            context.extensionPath,
+            'dist',
+            process.platform === 'win32'
+                ? 'miniscript-cli.exe'
+                : 'miniscript-cli'
+        );
 
     console.log('MiniScript runner path:', runnerPath);
 
@@ -57,19 +100,42 @@ export function activate(context: vscode.ExtensionContext) {
 
             // Spawn the MiniScript runner process
             const child = cp.spawn(
-                runnerPath,               // executable name
-                [document.fileName],               // arguments
+                runnerPath,             // executable name
+                [document.fileName],    // arguments
                 { cwd: path.dirname(document.fileName) }
             );
 
             // Capture stdout
+            let stdoutBuffer = '';
+
             child.stdout.on('data', (data) => {
-                outputChannel.append(data.toString());
+                stdoutBuffer += data.toString();
+
+                let newlineIndex;
+                while ((newlineIndex = stdoutBuffer.indexOf('\n')) >= 0) {
+                    const line = stdoutBuffer.slice(0, newlineIndex).trim();
+                    stdoutBuffer = stdoutBuffer.slice(newlineIndex + 1);
+
+                    if (!line) {
+                        continue;
+                    }
+
+                    try {
+                        const message = JSON.parse(line) as MiniScriptMessage;
+                        handleMiniScriptMessage(outputChannel, message);
+                    } catch (err) {
+                        outputChannel.appendLine(
+                            `[protocol error] ${line}`
+                        );
+                    }
+                }
             });
 
             // Capture stderr
             child.stderr.on('data', (data) => {
-                outputChannel.append(data.toString());
+                outputChannel.appendLine(
+                    `[runner stderr] ${data.toString()}`
+                );
             });
 
             // Process exit handling

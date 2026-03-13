@@ -22,7 +22,15 @@
         "command": "miniscript.runFile",
         "title": "MiniScript: Run File"
       }
-    ]
+    ],
+    "configuration": {
+      "properties": {
+        "miniscript.runnerPath": {
+          "type": "string",
+          "description": "Path to MiniScript CLI executable."
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run package",
