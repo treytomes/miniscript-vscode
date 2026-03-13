@@ -1,10 +1,13 @@
 main = function
 	print "Hello world!"
-	for n in range(10000)
-		print n
-	end for
-	print stackTrace
-	asdf
+
+	n = 0
+	while true
+		// if n % 1000 == 0 then print n
+		n += 1
+	end while
+	// print stackTrace
+	// asdf
 end function
 
 main

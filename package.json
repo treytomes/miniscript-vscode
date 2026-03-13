@@ -15,12 +15,12 @@
   "contributes": {
     "commands": [
       {
-        "command": "miniscript.helloWorld",
-        "title": "Hello World"
-      },
-      {
         "command": "miniscript.runFile",
         "title": "MiniScript: Run File"
+      },
+      {
+        "command": "miniscript.cancelRun",
+        "title": "MiniScript: Cancel Run"
       }
     ],
     "configuration": {

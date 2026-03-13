@@ -4,9 +4,11 @@
 * Execution options: timeout, step limit
 * Debugger protocol???
 
-* Split message handling into a MiniScriptProtocol class
-* Track execution state (running / finished)
-* Add cancellation support (child.kill())
 * Add compile-time diagnostics (before RunUntilDone)
 * Introduce severity levels from MiniScript
 * Decide whether implicit output should be suppressible via settings
+* Disable Run File while running
+* Enable Cancel Run only while running
+* Add a status bar item showing execution state
+
+* What to do with runaway scripts?  Anything?

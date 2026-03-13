@@ -101,7 +101,7 @@ class Program
 				List<SourceLoc> stack = interpreter.vm.GetStack();
 				foreach (var loc in stack)
 				{
-					output.Diagnostic(loc.context ?? props.ScriptPath, loc.lineNum, 0, "error", text);
+					output.Diagnostic(loc?.context ?? props.ScriptPath, loc?.lineNum ?? 0, 0, "error", text);
 				}
 			};
 
@@ -111,7 +111,22 @@ class Program
 			output.Emit(new { type = "diagnostics.clear" });
 			interpreter.Reset(source);
 			interpreter.Compile();
-			interpreter.RunUntilDone();
+
+			try
+			{
+				while (interpreter.Running())
+				{
+					cancellationToken.ThrowIfCancellationRequested();
+					interpreter.RunUntilDone(0.03f);
+				}
+			}
+			catch (OperationCanceledException)
+			{
+				interpreter.Stop();
+				interpreter.errorOutput?.Invoke("Operation cancelled.", true);
+				output.Emit(new { type = "cancelled" });
+			}
+			// interpreter.RunUntilDone();
 
 			output.Exit(0);
 			return 0;
@@ -128,8 +143,8 @@ class Program
 	{
 		return Host.CreateDefaultBuilder()
 			.ConfigureAppConfiguration((ctx, config) => ConfigureAppConfiguration(config, props))
-			.ConfigureLogging(ConfigureLogging)
-			.ConfigureServices((ctx, services) => ConfigureServices(ctx, services));
+			.ConfigureLogging((ctx, logging) => logging.ConfigureCli(ctx))
+			.ConfigureServices((ctx, services) => services.ConfigureCli(ctx));
 	}
 
 	private static void ConfigureAppConfiguration(IConfigurationBuilder config, CommandLineProps props)
@@ -148,23 +163,5 @@ class Program
 		};
 
 		config.AddInMemoryCollection(overrides);
-	}
-
-	private static void ConfigureLogging(HostBuilderContext ctx, ILoggingBuilder logging)
-	{
-		logging.ClearProviders();
-
-		logging.AddConsole();
-
-		var debug = ctx.Configuration.GetValue<bool>("Debug");
-		var minLevel = debug ? LogLevel.Trace : LogLevel.Information;
-		logging.SetMinimumLevel(minLevel);
-	}
-
-	private static void ConfigureServices(HostBuilderContext ctx, IServiceCollection services)
-	{
-		// Configuration
-		services.Configure<AppSettings>(ctx.Configuration);
-		services.AddSingleton(sp => sp.GetRequiredService<IOptions<AppSettings>>().Value);
 	}
 }

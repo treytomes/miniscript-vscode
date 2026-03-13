@@ -14,6 +14,7 @@ type MiniScriptMessage =
         message: string;
     }
     | { type: 'diagnostics.clear' }
+	| { type: 'cancelled' }
     | { type: 'exit'; code: number };
 
 export class MiniScriptProtocol {
@@ -87,6 +88,12 @@ export class MiniScriptProtocol {
                 this.addDiagnostic(msg);
                 break;
 
+			case 'cancelled':
+            	this.state = ExecutionState.Finished;
+            	this.output.appendLine('');
+            	this.output.appendLine('⏹ MiniScript execution cancelled.');
+				break;
+			
             case 'exit':
                 this.finishExecution(msg.code);
                 break;
