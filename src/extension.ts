@@ -7,38 +7,10 @@ import * as path from 'path';
 import { MiniScriptProtocol } from './MiniScriptProtocol';
 import ExecutionState from './ExecutionState';
 import setRunningState from './setRunningState';
+import getRunnerPath from './getRunnerPath';
+import formatDuration from './formatDuration';
 
 let runningProcess: cp.ChildProcess | undefined;
-
-function getRunnerPath(context: vscode.ExtensionContext) {
-	const configSection = vscode.workspace.getConfiguration('miniscript');
-	var runnerPath = undefined;
-	if (configSection) {
-		runnerPath = vscode.workspace.getConfiguration('miniscript').get<string>('runnerPath');
-	}
-	if (!runnerPath) {
-		runnerPath = path.join(
-            context.extensionPath,
-            'dist',
-            process.platform === 'win32'
-                ? 'miniscript-cli.exe'
-                : 'miniscript-cli'
-        );
-	}
-	if (!runnerPath) {
-		throw new Error("Unable to find a MiniScript CLI.");
-	}
-	return runnerPath;
-}
-
-function formatDuration(ms: number): string {
-    const seconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const remSeconds = seconds % 60;
-    return minutes > 0
-        ? `${minutes}m ${remSeconds}s`
-        : `${remSeconds}s`;
-}
 
 /**
  * Called when the extension is activated.

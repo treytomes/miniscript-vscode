@@ -111,9 +111,14 @@ class Program
 						var loc = stack[n];
 						var context = loc?.context ?? props.ScriptPath;
 						var lineNum = loc?.lineNum ?? 0;
-
 						output.Stdout($"{n}. {context} line {lineNum}\n");
-						output.Diagnostic(loc?.context ?? props.ScriptPath, loc?.lineNum ?? 0, 0, "error", text);
+						output.Diagnostic(
+							context,
+							lineNum,
+							0,
+							cancellationToken.IsCancellationRequested ? "hint" : "error",
+							"Stack frame (most recent call)"
+						);
 					}
 				}
 				else
