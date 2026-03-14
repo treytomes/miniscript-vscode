@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Miniscript;
 using System.CommandLine;
+using System.Text.RegularExpressions;
 
 namespace MiniScriptCli;
 
@@ -79,6 +80,7 @@ class Program
 			var source = File.ReadAllText(props.ScriptPath);
 
 			var interpreter = new Interpreter();
+			var hasError = false;
 
 			// Centralized output wiring
 			interpreter.standardOutput = (text, newline) =>
@@ -95,11 +97,12 @@ class Program
 
 			interpreter.errorOutput = (text, newline) =>
 			{
+				hasError = true;
 				if (newline) text = string.Concat(text, Environment.NewLine);
 				output.Error(text);
 
-				List<SourceLoc> stack = interpreter.vm.GetStack();
-				if (stack.Count > 0)
+				var stack = interpreter?.vm?.GetStack();
+				if (stack != null && stack.Count > 0)
 				{
 					output.Stdout("\n");
 					output.Stdout("Call stack:\n");
@@ -113,6 +116,22 @@ class Program
 						output.Diagnostic(loc?.context ?? props.ScriptPath, loc?.lineNum ?? 0, 0, "error", text);
 					}
 				}
+				else
+				{
+					// Compile error.  No stack trace.  Try to parse the text.
+					var match = Regex.Match(text, @"\A(?<msg>.*)\s+\[line\s+(?<lineNo>\d+)\]\Z", RegexOptions.Multiline);
+					if (match.Success)
+					{
+						if (int.TryParse(match.Groups["lineNo"].Value, out var lineNo))
+						{
+							output.Diagnostic(props.ScriptPath, lineNo, 0, "error", match.Groups["msg"].Value);
+						}
+						else
+						{
+							output.Diagnostic(props.ScriptPath, 0, 0, "error", match.Groups["msg"].Value);
+						}
+					}
+				}
 			};
 
 			// Future extension point
@@ -122,19 +141,22 @@ class Program
 			interpreter.Reset(source);
 			interpreter.Compile();
 
-			try
+			if (!hasError)
 			{
-				while (interpreter.Running())
+				try
 				{
-					interpreter.RunUntilDone(0.03f);
-					cancellationToken.ThrowIfCancellationRequested();
+					while (interpreter.Running())
+					{
+						interpreter.RunUntilDone(0.03f);
+						cancellationToken.ThrowIfCancellationRequested();
+					}
 				}
-			}
-			catch (OperationCanceledException)
-			{
-				interpreter.errorOutput?.Invoke("Operation cancelled.", true);
-				interpreter.Stop();
-				output.Emit(new { type = "cancelled" });
+				catch (OperationCanceledException)
+				{
+					interpreter.errorOutput?.Invoke("Operation cancelled.", true);
+					interpreter.Stop();
+					output.Emit(new { type = "cancelled" });
+				}
 			}
 
 			output.Exit(0);

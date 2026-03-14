@@ -6,6 +6,7 @@ import * as cp from 'child_process';
 import * as path from 'path';
 import { MiniScriptProtocol } from './MiniScriptProtocol';
 import ExecutionState from './ExecutionState';
+import setRunningState from './setRunningState';
 
 let runningProcess: cp.ChildProcess | undefined;
 
@@ -44,7 +45,49 @@ export function activate(context: vscode.ExtensionContext) {
     // Output channel for MiniScript execution results
 	const outputChannel = vscode.window.createOutputChannel('MiniScript');
 
-	const protocol = new MiniScriptProtocol(outputChannel, diagnostics);
+	const statusBarItem = vscode.window.createStatusBarItem(
+		vscode.StatusBarAlignment.Left,
+		100
+	);
+
+	statusBarItem.command = 'miniscript.cancelRun';
+	context.subscriptions.push(statusBarItem);
+
+	function showIdleStatus() {
+		statusBarItem.text = 'MiniScript: Idle';
+		statusBarItem.tooltip = 'Ready to run MiniScript';
+		statusBarItem.command = 'miniscript.runFile';
+		statusBarItem.show();
+	}
+
+	function showRunningStatus() {
+		statusBarItem.text = '$(sync~spin) MiniScript: Running';
+		statusBarItem.tooltip = 'Click to cancel MiniScript execution';
+		statusBarItem.command = 'miniscript.cancelRun';
+		statusBarItem.show();
+	}
+	
+	const protocol = new MiniScriptProtocol(
+		outputChannel,
+		diagnostics,
+		(state) => {
+			switch (state) {
+				case ExecutionState.Running:
+					setRunningState(true);
+					showRunningStatus();
+					break;
+
+				case ExecutionState.Finished:
+				case ExecutionState.Idle:
+					setRunningState(false);
+					showIdleStatus();
+					break;
+			}
+		}
+	);
+
+	showIdleStatus();
+	setRunningState(false);
 
     /**
      * Run the currently active MiniScript file.

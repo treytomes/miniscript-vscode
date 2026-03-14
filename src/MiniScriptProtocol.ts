@@ -1,22 +1,8 @@
 import * as vscode from 'vscode';
 import ExecutionState from './ExecutionState';
-import setRunningState from './setRunningState';
+import MiniScriptMessage from './MiniScriptMessage';
 
-type MiniScriptMessage =
-    | { type: 'stdout'; text: string }
-    | { type: 'implicit'; text: string }
-    | { type: 'error'; text: string }
-    | {
-        type: 'diagnostic';
-        file: string;
-        line: number;
-        column: number;
-        severity: 'error' | 'warning' | 'info';
-        message: string;
-    }
-    | { type: 'diagnostics.clear' }
-	| { type: 'cancelled' }
-    | { type: 'exit'; code: number };
+export type ExecutionStateListener = (state: ExecutionState) => void;
 
 export class MiniScriptProtocol {
     private stdoutBuffer = '';
@@ -24,18 +10,22 @@ export class MiniScriptProtocol {
 
     constructor(
         private readonly output: vscode.OutputChannel,
-        private readonly diagnostics: vscode.DiagnosticCollection
+        private readonly diagnostics: vscode.DiagnosticCollection,
+        private readonly onStateChange: ExecutionStateListener
     ) {}
 
+    private setState(state: ExecutionState) {
+        this.state = state;
+        this.onStateChange(state);
+    }
+
     startExecution() {
-		this.state = ExecutionState.Running;
-		this.diagnostics.clear();
-		setRunningState(true);
+        this.diagnostics.clear();
+        this.setState(ExecutionState.Running);
     }
 
     finishExecution(code?: number) {
-        this.state = ExecutionState.Finished;
-    	setRunningState(false);
+        this.setState(ExecutionState.Finished);
 
         if (code !== undefined) {
             this.output.appendLine('');
@@ -93,10 +83,9 @@ export class MiniScriptProtocol {
                 break;
 
 			case 'cancelled':
-            	this.state = ExecutionState.Finished;
-    			setRunningState(false);
-            	this.output.appendLine('');
-            	this.output.appendLine('⏹ MiniScript execution cancelled.');
+				this.setState(ExecutionState.Finished);
+				this.output.appendLine('');
+				this.output.appendLine('⏹ MiniScript execution cancelled.');
 				break;
 			
             case 'exit':
