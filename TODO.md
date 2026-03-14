@@ -4,15 +4,4 @@
 * Execution options: timeout, step limit
 * Debugger protocol???
 
-* Add compile-time diagnostics (before RunUntilDone)
-* Introduce severity levels from MiniScript
 * Decide whether implicit output should be suppressible via settings
-* Disable Run File while running
-* Enable Cancel Run only while running
-* Add a status bar item showing execution state
-
-* What to do with runaway scripts?  Anything?
-
-* What does it mean to distinguish between current frames vs caller frames?
-* Collapse stack frames into a single expandable item
-* Should I add a “Jump to stack frame” command?
