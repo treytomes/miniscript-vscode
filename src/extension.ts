@@ -31,6 +31,15 @@ function getRunnerPath(context: vscode.ExtensionContext) {
 	return runnerPath;
 }
 
+function formatDuration(ms: number): string {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const remSeconds = seconds % 60;
+    return minutes > 0
+        ? `${minutes}m ${remSeconds}s`
+        : `${remSeconds}s`;
+}
+
 /**
  * Called when the extension is activated.
  * Registers the MiniScript: Run File command.
@@ -39,9 +48,19 @@ export function activate(context: vscode.ExtensionContext) {
 	const runnerPath = getRunnerPath(context);
     console.log('MiniScript runner path:', runnerPath);
 
+	let executionStartTime: number | undefined;
+	let executionTimer: NodeJS.Timeout | undefined;
+	let currentScriptName: string | undefined;
+	
 	const diagnostics = vscode.languages.createDiagnosticCollection('miniscript');
 	context.subscriptions.push(diagnostics);
-
+	
+	context.subscriptions.push(
+		vscode.languages.onDidChangeDiagnostics(() => {
+			renderStatusBar(protocol.executionState);
+		})
+	);
+	
     // Output channel for MiniScript execution results
 	const outputChannel = vscode.window.createOutputChannel('MiniScript');
 
@@ -53,17 +72,46 @@ export function activate(context: vscode.ExtensionContext) {
 	statusBarItem.command = 'miniscript.cancelRun';
 	context.subscriptions.push(statusBarItem);
 
-	function showIdleStatus() {
-		statusBarItem.text = 'MiniScript: Idle';
-		statusBarItem.tooltip = 'Ready to run MiniScript';
-		statusBarItem.command = 'miniscript.runFile';
-		statusBarItem.show();
+	function getErrorCount(): number {
+		let count = 0;
+		for (const [, diags] of diagnostics) {
+			count += diags.filter(
+				d => d.severity === vscode.DiagnosticSeverity.Error
+			).length;
+		}
+		return count;
+	}
+	
+	function startExecutionTimer(update: () => void) {
+		executionStartTime = Date.now();
+		executionTimer = setInterval(update, 1000);
 	}
 
-	function showRunningStatus() {
-		statusBarItem.text = '$(sync~spin) MiniScript: Running';
-		statusBarItem.tooltip = 'Click to cancel MiniScript execution';
-		statusBarItem.command = 'miniscript.cancelRun';
+	function stopExecutionTimer() {
+		if (executionTimer) {
+			clearInterval(executionTimer);
+			executionTimer = undefined;
+		}
+		executionStartTime = undefined;
+	}
+
+	function renderStatusBar(state: ExecutionState) {
+		const errorCount = getErrorCount();
+		const errorPart = errorCount > 0 ? ` $(error) ${errorCount}` : '';
+
+		if (state === ExecutionState.Running && executionStartTime !== undefined) {
+			const elapsed = formatDuration(Date.now() - executionStartTime);
+			statusBarItem.text = `$(sync~spin) ${currentScriptName ?? 'MiniScript'} · ${elapsed}${errorPart}`;
+			statusBarItem.tooltip = 'Click to cancel MiniScript execution';
+			statusBarItem.command = 'miniscript.cancelRun';
+			statusBarItem.show();
+			return;
+		}
+
+		// Idle / finished
+		statusBarItem.text = `MiniScript${errorPart}`;
+		statusBarItem.tooltip = 'Ready to run MiniScript';
+		statusBarItem.command = 'miniscript.runFile';
 		statusBarItem.show();
 	}
 	
@@ -74,20 +122,23 @@ export function activate(context: vscode.ExtensionContext) {
 			switch (state) {
 				case ExecutionState.Running:
 					setRunningState(true);
-					showRunningStatus();
+					startExecutionTimer(() => renderStatusBar(state));
+					renderStatusBar(state);
 					break;
 
 				case ExecutionState.Finished:
 				case ExecutionState.Idle:
+					stopExecutionTimer();
+					currentScriptName = undefined;
 					setRunningState(false);
-					showIdleStatus();
+					renderStatusBar(state);
 					break;
 			}
 		}
 	);
 
-	showIdleStatus();
 	setRunningState(false);
+	renderStatusBar(ExecutionState.Idle);
 
     /**
      * Run the currently active MiniScript file.
@@ -113,8 +164,8 @@ export function activate(context: vscode.ExtensionContext) {
             if (path.extname(document.fileName) !== '.ms') {
                 vscode.window.showErrorMessage('Active file is not a MiniScript (.ms) file.');
                 return;
-            }
-
+			}
+			
             // Ensure file is saved before execution
             if (document.isDirty) {
                 await document.save();
@@ -125,6 +176,7 @@ export function activate(context: vscode.ExtensionContext) {
             outputChannel.appendLine(`Running MiniScript: ${document.fileName}`);
             outputChannel.appendLine('----------------------------------------');
 
+			currentScriptName = path.basename(document.fileName);
 			protocol.startExecution();
 			
             // Spawn the MiniScript runner process

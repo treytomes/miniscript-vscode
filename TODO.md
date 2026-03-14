@@ -12,7 +12,3 @@
 * Add a status bar item showing execution state
 
 * What to do with runaway scripts?  Anything?
-
-* Execution time display
-* Script name in the status bar
-* Error count badges
