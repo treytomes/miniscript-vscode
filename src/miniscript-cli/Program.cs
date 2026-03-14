@@ -5,7 +5,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Miniscript;
 using System.CommandLine;
-using System.Text.RegularExpressions;
 
 namespace MiniScriptCli;
 
@@ -18,6 +17,12 @@ internal class Program
 			description: "Path to the script source."
 		);
 
+		var compileOnlyOption = new Option<bool>(
+			name: "--compileOnly",
+			description: "Compile the script without running it.",
+			getDefaultValue: () => false
+		);
+
 		var configFileOption = new Option<string>(
 			name: "--config",
 			description: "Path to the configuration file",
@@ -25,18 +30,21 @@ internal class Program
 
 		var debugOption = new Option<bool>(
 			name: "--debug",
-			description: "Enable debug mode");
+			description: "Enable debug mode"
+		);
 
 		var root = new RootCommand("MiniScript VS.Code CLI");
 		root.AddOption(scriptPathOption);
+		root.AddOption(compileOnlyOption);
 		root.AddOption(configFileOption);
 		root.AddOption(debugOption);
 
-		root.SetHandler(async (scriptPath, configFile, debug) =>
+		root.SetHandler(async (scriptPath, compileOnly, configFile, debug) =>
 		{
 			var props = new CommandLineProps
 			{
 				ScriptPath = scriptPath,
+				CompileOnly = compileOnly,
 				ConfigFile = configFile,
 				Debug = debug,
 			};
@@ -58,7 +66,7 @@ internal class Program
 			};
 
 			await StartAsync(props, cts.Token);
-		}, scriptPathOption, configFileOption, debugOption);
+		}, scriptPathOption, compileOnlyOption, configFileOption, debugOption);
 
 		return await root.InvokeAsync(args);
 	}
@@ -90,7 +98,7 @@ internal class Program
 			interpreter.Reset(source);
 			interpreter.Compile();
 
-			if (!scriptOutputHub.HasError)
+			if (!scriptOutputHub.HasError && !props.CompileOnly)
 			{
 				try
 				{
