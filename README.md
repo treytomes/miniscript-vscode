@@ -1,6 +1,6 @@
-# miniscript-runner README
+# miniscript-vscode README
 
-This is the README for your extension "miniscript-runner". After writing up a brief description, we recommend including the following sections.
+This is the README for your extension "miniscript-vscode". After writing up a brief description, we recommend including the following sections.
 
 ## Features
 

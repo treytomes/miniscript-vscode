@@ -1,6 +1,6 @@
 {
-  "name": "miniscript-runner",
-  "displayName": "miniscript-runner",
+  "name": "miniscript-vscode",
+  "displayName": "miniscript-vscode",
   "description": "Execute MiniScript and view results.",
   "version": "0.0.1",
   "engines": {
