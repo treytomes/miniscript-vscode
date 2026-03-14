@@ -11,8 +11,6 @@ namespace MiniScriptCli;
 
 internal class Program
 {
-	private static readonly Regex COMPILE_ERROR_REGEX = new Regex(@"(?<msg>.*)\s+\[line\s+(?<lineNo>\d+)\]", RegexOptions.Multiline | RegexOptions.Compiled);
-
 	static async Task<int> Main(string[] args)
 	{
 		var scriptPathOption = new Option<string>(
@@ -68,7 +66,6 @@ internal class Program
 	private static async Task<int> StartAsync(CommandLineProps props, CancellationToken cancellationToken)
 	{
 		await Task.Yield();
-		var output = new JsonOutputHub();
 
 		try
 		{
@@ -87,78 +84,13 @@ internal class Program
 			var source = File.ReadAllText(props.ScriptPath);
 
 			var interpreter = new Interpreter();
-			var hasError = false;
+			var scriptOutputHub = new ScriptOutputHub(interpreter, props.ScriptPath, cancellationToken);
 
-			// Centralized output wiring
-			interpreter.standardOutput = (text, newline) =>
-			{
-				if (newline) text = string.Concat(text, Environment.NewLine);
-				output.Stdout(text);
-			};
-
-			interpreter.implicitOutput = (text, newline) =>
-			{
-				if (newline) text = string.Concat(text, Environment.NewLine);
-				output.Implicit(text);
-			};
-
-			interpreter.errorOutput = (text, newline) =>
-			{
-				hasError = true;
-				if (newline) text = string.Concat(text, Environment.NewLine);
-				output.Error(text);
-
-				var stack = interpreter?.vm?.GetStack();
-				if (stack != null && stack.Count > 0)
-				{
-					output.Stdout("\n");
-					output.Stdout("Call stack:\n");
-					for (var n = 0; n < stack.Count; n++)
-					{
-						var loc = stack[n];
-						var context = loc?.context ?? props.ScriptPath;
-						var lineNum = loc?.lineNum ?? 0;
-						output.Stdout($"{n}. {context} line {lineNum}\n");
-						output.Diagnostic(
-							context,
-							lineNum,
-							0,
-							cancellationToken.IsCancellationRequested ? "hint" : "error",
-							"Stack frame (most recent call)"
-						);
-					}
-				}
-				else
-				{
-					// Compile error.  No stack trace.  Try to parse the text.
-					var match = COMPILE_ERROR_REGEX.Match(text);
-					if (match.Success)
-					{
-						var msg = match.Groups["msg"].Value.Replace(Environment.NewLine, "\\n");
-						if (int.TryParse(match.Groups["lineNo"].Value, out var lineNo))
-						{
-							output.Diagnostic(props.ScriptPath, lineNo, 0, "error", msg);
-						}
-						else
-						{
-							output.Diagnostic(props.ScriptPath, 0, 0, "error", msg);
-						}
-					}
-					else
-					{
-						output.Diagnostic(props.ScriptPath, 0, 0, "error", text);
-					}
-				}
-			};
-
-			// Future extension point
-			// interpreter.hostData = new MiniScriptHostContext(...);
-
-			output.Emit(new { type = "diagnostics.clear" });
+			scriptOutputHub.Output.Emit(new { type = "diagnostics.clear" });
 			interpreter.Reset(source);
 			interpreter.Compile();
 
-			if (!hasError)
+			if (!scriptOutputHub.HasError)
 			{
 				try
 				{
@@ -172,11 +104,11 @@ internal class Program
 				{
 					interpreter.errorOutput?.Invoke("Operation cancelled.", true);
 					interpreter.Stop();
-					output.Emit(new { type = "cancelled" });
+					scriptOutputHub.Output.Emit(new { type = "cancelled" });
 				}
 			}
 
-			output.Exit(0);
+			scriptOutputHub.Output.Exit(0);
 			return 0;
 		}
 		catch (Exception ex)
