@@ -10,7 +10,7 @@ main = function
 	while true
 		// if n % 1000 == 0 then print n
 		n += 1
-		// asd
+		asd
 	end while
 	// print stackTrace
 	// asdf

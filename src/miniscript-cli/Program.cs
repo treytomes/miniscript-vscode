@@ -1,16 +1,18 @@
-﻿using Microsoft.Extensions.Configuration;
+﻿// Program.cs
+
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Miniscript;
 using System.CommandLine;
 using System.Text.RegularExpressions;
 
 namespace MiniScriptCli;
 
-class Program
+internal class Program
 {
+	private static readonly Regex COMPILE_ERROR_REGEX = new Regex(@"(?<msg>.*)\s+\[line\s+(?<lineNo>\d+)\]", RegexOptions.Multiline | RegexOptions.Compiled);
+
 	static async Task<int> Main(string[] args)
 	{
 		var scriptPathOption = new Option<string>(
@@ -41,7 +43,12 @@ class Program
 				Debug = debug,
 			};
 
-			using var host = CreateHostBuilder(props).Build();
+			using var host = Host.CreateDefaultBuilder()
+				.ConfigureAppConfiguration((ctx, config) => config.ConfigureAppConfiguration(ctx, props))
+				.ConfigureLogging((ctx, logging) => logging.ConfigureCli(ctx))
+				.ConfigureServices((ctx, services) => services.ConfigureCli(ctx))
+				.Build();
+
 			var logger = host.Services.GetRequiredService<ILogger<Program>>();
 			var cts = new CancellationTokenSource();
 			var ct = cts.Token;
@@ -124,17 +131,22 @@ class Program
 				else
 				{
 					// Compile error.  No stack trace.  Try to parse the text.
-					var match = Regex.Match(text, @"\A(?<msg>.*)\s+\[line\s+(?<lineNo>\d+)\]\Z", RegexOptions.Multiline);
+					var match = COMPILE_ERROR_REGEX.Match(text);
 					if (match.Success)
 					{
+						var msg = match.Groups["msg"].Value.Replace(Environment.NewLine, "\\n");
 						if (int.TryParse(match.Groups["lineNo"].Value, out var lineNo))
 						{
-							output.Diagnostic(props.ScriptPath, lineNo, 0, "error", match.Groups["msg"].Value);
+							output.Diagnostic(props.ScriptPath, lineNo, 0, "error", msg);
 						}
 						else
 						{
-							output.Diagnostic(props.ScriptPath, 0, 0, "error", match.Groups["msg"].Value);
+							output.Diagnostic(props.ScriptPath, 0, 0, "error", msg);
 						}
+					}
+					else
+					{
+						output.Diagnostic(props.ScriptPath, 0, 0, "error", text);
 					}
 				}
 			};
@@ -173,31 +185,5 @@ class Program
 			Console.Error.WriteLine(ex.ToString());
 			return 2;
 		}
-	}
-
-	private static IHostBuilder CreateHostBuilder(CommandLineProps props)
-	{
-		return Host.CreateDefaultBuilder()
-			.ConfigureAppConfiguration((ctx, config) => ConfigureAppConfiguration(config, props))
-			.ConfigureLogging((ctx, logging) => logging.ConfigureCli(ctx))
-			.ConfigureServices((ctx, services) => services.ConfigureCli(ctx));
-	}
-
-	private static void ConfigureAppConfiguration(IConfigurationBuilder config, CommandLineProps props)
-	{
-		config.Sources.Clear();
-		config.SetBasePath(AppContext.BaseDirectory);
-
-		config.AddJsonFile(
-			props.ConfigFile,
-			optional: false,
-			reloadOnChange: false);
-
-		var overrides = new Dictionary<string, string?>
-		{
-			["Debug"] = props.Debug.ToString()
-		};
-
-		config.AddInMemoryCollection(overrides);
 	}
 }

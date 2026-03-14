@@ -12,3 +12,7 @@
 * Add a status bar item showing execution state
 
 * What to do with runaway scripts?  Anything?
+
+* What does it mean to distinguish between current frames vs caller frames?
+* Collapse stack frames into a single expandable item
+* Should I add a “Jump to stack frame” command?
