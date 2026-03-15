@@ -230,11 +230,12 @@ export function activate(context: vscode.ExtensionContext) {
 	
     context.subscriptions.push(runFileCommand, cancelRunCommand, outputChannel);
 
-	const activeEditor = vscode.window.activeTextEditor;
-	if (activeEditor) {
-		const config = vscode.workspace.getConfiguration('miniscript');
-		if (config.get<boolean>('compileOnSave')) {
-			compileDocument(activeEditor.document, protocol, runnerPath);
+	const config = vscode.workspace.getConfiguration('miniscript');
+	if (config.get<boolean>('compileOnSave')) {
+		for (const document of vscode.workspace.textDocuments) {
+			if (path.extname(document.fileName) === '.ms') {
+				compileDocument(document, protocol, runnerPath);
+			}
 		}
 	}
 }
