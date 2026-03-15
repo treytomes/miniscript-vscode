@@ -9,9 +9,13 @@ import ExecutionState from './ExecutionState';
 import setRunningState from './setRunningState';
 import getRunnerPath from './getRunnerPath';
 import formatDuration from './formatDuration';
-import compileDocument from './compileDocument';
+import CompileStatus from './CompileStatus';
 
 let runningProcess: cp.ChildProcess | undefined;
+const compileTimers = new Map<string, NodeJS.Timeout>();
+const COMPILE_DEBOUNCE_MS = 300;
+
+let compileStatus: CompileStatus = CompileStatus.Idle;
 
 /**
  * Called when the extension is activated.
@@ -31,10 +35,7 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.languages.onDidChangeDiagnostics(() => {
 			renderStatusBar(protocol.executionState);
-		})
-	);
-
-	context.subscriptions.push(
+		}),
 		vscode.workspace.onDidSaveTextDocument((document) => {
 			const config = vscode.workspace.getConfiguration('miniscript');
 			if (!config.get<boolean>('compileOnSave')) {
@@ -47,7 +48,7 @@ export function activate(context: vscode.ExtensionContext) {
 			if (!config.get<boolean>('compileOnSave')) {
 				return;
 			}
-			compileDocument(document, protocol, runnerPath);
+    		scheduleCompile(document, protocol, runnerPath);
 		})
 	);
 	
@@ -98,13 +99,102 @@ export function activate(context: vscode.ExtensionContext) {
 			return;
 		}
 
+		// Compile-only / idle state
+		switch (compileStatus) {
+			case CompileStatus.Compiling:
+				statusBarItem.text = '$(sync~spin) MiniScript: Compiling…';
+				statusBarItem.tooltip = 'Compiling MiniScript';
+				break;
+
+			case CompileStatus.Error:
+				statusBarItem.text = `$(error) MiniScript: ${errorCount} error(s)`;
+				statusBarItem.tooltip = 'MiniScript compile errors';
+				break;
+
+			case CompileStatus.Success:
+				statusBarItem.text = '$(check) MiniScript: OK';
+				statusBarItem.tooltip = 'MiniScript compiled successfully';
+				break;
+
+			default:
+				statusBarItem.text = 'MiniScript';
+				statusBarItem.tooltip = 'Ready';
+				break;
+		}
+		
 		// Idle / finished
-		statusBarItem.text = `MiniScript${errorPart}`;
-		statusBarItem.tooltip = 'Ready to run MiniScript';
 		statusBarItem.command = 'miniscript.runFile';
 		statusBarItem.show();
 	}
 	
+	function compileDocument(
+		document: vscode.TextDocument,
+		protocol: MiniScriptProtocol,
+		runnerPath: string
+	) {
+		if (path.extname(document.fileName) !== '.ms') {
+			return;
+		}
+
+		// Do not interrupt a running script
+		if (protocol.executionState === ExecutionState.Running) {
+			return;
+		}
+
+		protocol.beginCompilePass();
+
+		const child = cp.spawn(
+			runnerPath,
+			[
+				'--scriptPath',
+				document.fileName,
+				'--compileOnly'
+			],
+			{ cwd: path.dirname(document.fileName) }
+		);
+
+		child.stdout?.on('data', (data) =>
+			protocol.handleStdoutChunk(data)
+		);
+
+		child.stderr?.on('data', (data) =>
+			protocol.handleStderrChunk(data)
+		);
+
+		child.on('error', (err) => {
+			console.error('MiniScript compile failed:', err);
+		});
+
+		child.on('close', () => {
+			const errorCount = getErrorCount();
+			compileStatus =
+				errorCount > 0 ? CompileStatus.Error : CompileStatus.Success;
+
+			renderStatusBar(protocol.executionState);
+		});
+	}
+		
+	function scheduleCompile(
+		document: vscode.TextDocument,
+		protocol: MiniScriptProtocol,
+		runnerPath: string
+	) {
+		compileStatus = CompileStatus.Compiling;
+		const key = document.fileName;
+
+		const existing = compileTimers.get(key);
+		if (existing) {
+			clearTimeout(existing);
+		}
+
+		const timer = setTimeout(() => {
+			compileTimers.delete(key);
+			compileDocument(document, protocol, runnerPath);
+		}, COMPILE_DEBOUNCE_MS);
+
+		compileTimers.set(key, timer);
+	}
+
 	const protocol = new MiniScriptProtocol(
 		outputChannel,
 		diagnostics,
@@ -130,13 +220,43 @@ export function activate(context: vscode.ExtensionContext) {
 	setRunningState(false);
 	renderStatusBar(ExecutionState.Idle);
 
+	const compileFileCommand = vscode.commands.registerCommand(
+		'miniscript.compileFile',
+		async () => {
+			if (protocol.executionState === ExecutionState.Running) {
+                vscode.window.showWarningMessage('MiniScript is already running.');
+                return;
+			}
+			
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) {
+                vscode.window.showErrorMessage('No active editor.');
+                return;
+            }
+
+            const document = editor.document;
+
+            // Optional: enforce .ms extension
+            if (path.extname(document.fileName) !== '.ms') {
+                vscode.window.showErrorMessage('Active file is not a MiniScript (.ms) file.');
+                return;
+			}
+			
+            // Ensure file is saved before execution
+            if (document.isDirty) {
+                await document.save();
+			}
+			
+			scheduleCompile(document, protocol, runnerPath);
+		}
+	);
+
     /**
      * Run the currently active MiniScript file.
      */
     const runFileCommand = vscode.commands.registerCommand(
         'miniscript.runFile',
         async () => {
-
 			if (protocol.executionState === ExecutionState.Running) {
                 vscode.window.showWarningMessage('MiniScript is already running.');
                 return;
@@ -234,7 +354,7 @@ export function activate(context: vscode.ExtensionContext) {
 	if (config.get<boolean>('compileOnSave')) {
 		for (const document of vscode.workspace.textDocuments) {
 			if (path.extname(document.fileName) === '.ms') {
-				compileDocument(document, protocol, runnerPath);
+				scheduleCompile(document, protocol, runnerPath);
 			}
 		}
 	}

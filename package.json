@@ -17,6 +17,10 @@
   "contributes": {
     "commands": [
       {
+        "command": "miniscript.compileFile",
+        "title": "MiniScript: Compile File"
+      },
+      {
         "command": "miniscript.runFile",
         "title": "MiniScript: Run File"
       },
@@ -47,6 +51,9 @@
     },
     "menus": {
       "commandPalette": [
+		{
+			"command": "miniscript.compileFile"
+		},
         {
           "command": "miniscript.runFile",
           "when": "!miniscript.isRunning"
