@@ -1,3 +1,5 @@
+// MiniScriptProtocol.ts
+
 import * as vscode from 'vscode';
 import ExecutionState from './ExecutionState';
 import MiniScriptMessage from './MiniScriptMessage';
@@ -17,7 +19,11 @@ export class MiniScriptProtocol {
     private setState(state: ExecutionState) {
         this.state = state;
         this.onStateChange(state);
-    }
+	}
+	
+	beginCompilePass() {
+		this.diagnostics.clear();
+	}
 
     startExecution() {
         this.diagnostics.clear();
@@ -27,10 +33,10 @@ export class MiniScriptProtocol {
     finishExecution(code?: number) {
         this.setState(ExecutionState.Finished);
 
-        if (code !== undefined) {
-            this.output.appendLine('');
-            this.output.appendLine(`Process exited with code ${code}`);
-        }
+        // if (code !== undefined) {
+        //     this.output.appendLine('');
+        //     this.output.appendLine(`Process exited with code ${code}`);
+        // }
     }
 
     get executionState() {

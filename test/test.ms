@@ -4,7 +4,8 @@ main = function
 	lst = [
 		1,
 		2,
-		3]
+		3
+	]
 
 	n = 0
 	while true

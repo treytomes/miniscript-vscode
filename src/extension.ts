@@ -9,6 +9,7 @@ import ExecutionState from './ExecutionState';
 import setRunningState from './setRunningState';
 import getRunnerPath from './getRunnerPath';
 import formatDuration from './formatDuration';
+import compileDocument from './compileDocument';
 
 let runningProcess: cp.ChildProcess | undefined;
 
@@ -30,6 +31,23 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.languages.onDidChangeDiagnostics(() => {
 			renderStatusBar(protocol.executionState);
+		})
+	);
+
+	context.subscriptions.push(
+		vscode.workspace.onDidSaveTextDocument((document) => {
+			const config = vscode.workspace.getConfiguration('miniscript');
+			if (!config.get<boolean>('compileOnSave')) {
+				return;
+			}
+			compileDocument(document, protocol, runnerPath);
+		}),
+		vscode.workspace.onDidOpenTextDocument((document) => {
+			const config = vscode.workspace.getConfiguration('miniscript');
+			if (!config.get<boolean>('compileOnSave')) {
+				return;
+			}
+			compileDocument(document, protocol, runnerPath);
 		})
 	);
 	
@@ -211,6 +229,14 @@ export function activate(context: vscode.ExtensionContext) {
 	);
 	
     context.subscriptions.push(runFileCommand, cancelRunCommand, outputChannel);
+
+	const activeEditor = vscode.window.activeTextEditor;
+	if (activeEditor) {
+		const config = vscode.workspace.getConfiguration('miniscript');
+		if (config.get<boolean>('compileOnSave')) {
+			compileDocument(activeEditor.document, protocol, runnerPath);
+		}
+	}
 }
 
 /**
