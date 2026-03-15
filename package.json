@@ -10,7 +10,9 @@
     "Other"
   ],
   "extensionKind": ["workspace"],
-  "activationEvents": [],
+  "activationEvents": [
+    "onLanguage:miniscript"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
@@ -28,8 +30,20 @@
         "miniscript.runnerPath": {
           "type": "string",
           "description": "Path to MiniScript CLI executable."
-        }
-      }
+        },
+		"miniscript.compileOnSave": {
+			"type": "boolean",
+			"default": true,
+			"description": "Compile MiniScript files automatically when saved."
+		}
+	  },
+	  "languages": [
+		{
+		  "id": "miniscript",
+		  "extensions": [".ms"],
+		  "aliases": ["MiniScript"]
+		}
+	  ]
     },
     "menus": {
       "commandPalette": [
