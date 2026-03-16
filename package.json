@@ -49,6 +49,26 @@
 		}
 	  ]
     },
+	"debuggers": [
+	  {
+		"type": "miniscript",
+		"label": "MiniScript",
+		"languages": ["miniscript"],
+		"program": "./dist/extension.js",
+		"runtime": "node",
+		"configurationAttributes": {
+		  "launch": {
+			"required": ["program"],
+			"properties": {
+			  "program": {
+				"type": "string",
+				"description": "MiniScript file to debug"
+			  }
+			}
+		  }
+		}
+	  }
+	],
     "menus": {
       "commandPalette": [
 		{

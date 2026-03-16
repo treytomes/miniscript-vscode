@@ -30,7 +30,7 @@ internal class Program
 
 		var debugOption = new Option<bool>(
 			name: "--debug",
-			description: "Enable debug mode"
+			description: "Enable the debug server"
 		);
 
 		var root = new RootCommand("MiniScript VS.Code CLI");
@@ -65,10 +65,28 @@ internal class Program
 				cts.Cancel();           // signal kernel shutdown
 			};
 
-			await StartAsync(props, cts.Token);
+			if (props.Debug)
+			{
+				await RunDebugAdapterAsync(props, cts.Token);
+			}
+			else
+			{
+				await StartAsync(props, cts.Token);
+			}
 		}, scriptPathOption, compileOnlyOption, configFileOption, debugOption);
 
 		return await root.InvokeAsync(args);
+	}
+
+	private static async Task<int> RunDebugAdapterAsync(CommandLineProps props, CancellationToken cancellationToken)
+	{
+		var adapter = new MiniScriptDebugAdapter(
+			Console.OpenStandardInput(),
+			Console.OpenStandardOutput()
+		);
+
+		await adapter.RunAsync();
+		return 0;
 	}
 
 	private static async Task<int> StartAsync(CommandLineProps props, CancellationToken cancellationToken)

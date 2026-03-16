@@ -52,6 +52,21 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 	
+	context.subscriptions.push(
+		vscode.debug.registerDebugAdapterDescriptorFactory(
+			'miniscript',
+			{
+				createDebugAdapterDescriptor(_session) {
+					return new vscode.DebugAdapterExecutable(
+						runnerPath,
+						['--debug']
+						// no options object needed
+					);
+				}
+			}
+		)
+	);
+	
     // Output channel for MiniScript execution results
 	const outputChannel = vscode.window.createOutputChannel('MiniScript');
 
